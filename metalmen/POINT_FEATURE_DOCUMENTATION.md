@@ -83,9 +83,82 @@
 
 ---
 
-### 2. Redemption APIs
+### 2. Configuration API
 
-#### 2.1 Get Redemption List
+#### 2.1 Get Configuration by Feature
+
+**Endpoint:** `GET /api/mobile/configuration?feature={feature_name}`  
+**Authentication:** Not Required  
+**Description:** Get configuration data by feature name (case insensitive)
+
+**Query Parameters:**
+
+-   `feature` (required, string) - Feature name to search for (case insensitive)
+
+**Response:**
+
+```json
+{
+    "point": {
+        "status": true,
+        "type": "active",
+        "text": "undermaintenance"
+    }
+}
+```
+
+**Response Format:**
+
+```json
+{
+  "{feature_name}": {
+    "status": boolean,
+    "type": "maintenance|coming_soon|active",
+    "text": string|null
+  }
+}
+```
+
+**Error Responses:**
+
+-   `400` - Parameter feature diperlukan
+-   `404` - Configuration tidak ditemukan
+
+**Notes:**
+
+-   Search is case insensitive (e.g., `point`, `POINT`, `Point` will return the same result)
+-   Response key uses the actual feature name from database (not the query parameter)
+-   `text` field can be `null` if not set
+
+**Example Usage:**
+
+```bash
+# Get configuration for "point" feature
+GET /api/mobile/configuration?feature=point
+
+# Case insensitive - all return same result
+GET /api/mobile/configuration?feature=POINT
+GET /api/mobile/configuration?feature=Point
+GET /api/mobile/configuration?feature=poInT
+```
+
+**Response Example:**
+
+```json
+{
+    "point": {
+        "status": true,
+        "type": "maintenance",
+        "text": "Sistem sedang dalam maintenance"
+    }
+}
+```
+
+---
+
+### 3. Redemption APIs
+
+#### 3.1 Get Redemption List
 
 **Endpoint:** `GET /api/mobile/redemption/list`  
 **Authentication:** Required (`auth:api`)  
@@ -127,7 +200,7 @@
 
 **Note:** Items are no longer grouped by date. Each item includes `created_at` field directly.
 
-#### 2.2 Get Redemption Detail
+#### 3.2 Get Redemption Detail
 
 **Endpoint:** `GET /api/mobile/redemption/detail/{id}`  
 **Authentication:** Required (`auth:api`)  
@@ -198,7 +271,7 @@
 -   Added `customer_address_id` field
 -   `shipping_address` is `null` if no address is set
 
-#### 2.3 Redeem Points
+#### 3.3 Redeem Points
 
 **Endpoint:** `POST /api/mobile/redemption`  
 **Authentication:** Required (`auth:api`)  
@@ -208,9 +281,15 @@
 
 ```json
 {
-    "master_gift_id": 1
+    "master_gift_id": 1,
+    "store_id": 5
 }
 ```
+
+**Request Body Fields:**
+
+-   `master_gift_id` (required, integer) - Master gift ID to redeem
+-   `store_id` (required, integer) - Store ID where the redemption is associated. Must exist in `stores` table.
 
 **Note:** `shipping_address` is no longer required. The system automatically uses the customer's default address (`is_default = true`).
 
@@ -232,6 +311,7 @@
 -   `400` - Gift tidak ditemukan atau tidak aktif
 -   `400` - Stock gift tidak tersedia
 -   `400` - Point tidak cukup. Point Anda: {current}, Point yang dibutuhkan: {required}
+-   `400` - Validation error if `store_id` is missing or invalid
 
 **Business Rules:**
 
@@ -240,7 +320,7 @@
 -   System automatically uses customer's default address (`is_default = true`)
 -   Push notification and email are sent immediately after redemption is created
 
-#### 2.4 Mark Redemption as Received
+#### 3.4 Mark Redemption as Received
 
 **Endpoint:** `POST /api/mobile/redemption/complete/{id}`  
 **Authentication:** Required (`auth:api`)  
@@ -255,7 +335,7 @@
 ```json
 {
     "status": "success",
-    "message": "Redemption berhasil diselesaikan",
+    "message": "Penukaran berhasil diselesaikan",
     "data": {
         "redemption_id": 1,
         "is_received": true,
@@ -279,9 +359,9 @@
 
 ---
 
-### 3. Point APIs
+### 4. Point APIs
 
-#### 3.1 Get My Points
+#### 4.1 Get My Points
 
 **Endpoint:** `GET /api/mobile/user/point/my`  
 **Authentication:** Required (`auth:api`)  
@@ -302,7 +382,7 @@
 
 **Note:** `valid_until` can be `null` if no point history exists.
 
-#### 3.2 Get Point History
+#### 4.2 Get Point History
 
 **Endpoint:** `GET /api/mobile/user/point/history`  
 **Authentication:** Required (`auth:api`)  
@@ -362,9 +442,9 @@
 
 ---
 
-### 4. Notification APIs
+### 5. Notification APIs
 
-#### 4.1 List Notifications
+#### 5.1 List Notifications
 
 **Endpoint:** `GET /api/mobile/user/notification/list`
 
@@ -453,7 +533,7 @@ Accept: application/json
 -   If `remaining_points > 0`: "Sebagian poin rewards Anda..."
 -   If `remaining_points == 0`: "Semua poin rewards Anda..."
 
-#### 4.2 Unread Count
+#### 5.2 Unread Count
 
 **Endpoint:** `GET /api/mobile/user/notification/unread-count`
 
@@ -469,7 +549,7 @@ Accept: application/json
 }
 ```
 
-#### 4.3 Mark as Read
+#### 5.3 Mark as Read
 
 **Endpoint:** `POST /api/mobile/user/notification/read/{id}`
 
@@ -496,7 +576,7 @@ Accept: application/json
 }
 ```
 
-#### 4.4 Mark All as Read
+#### 5.4 Mark All as Read
 
 **Endpoint:** `POST /api/mobile/user/notification/read-all`
 
@@ -510,7 +590,7 @@ Accept: application/json
 }
 ```
 
-#### 4.5 Delete Notification
+#### 5.5 Delete Notification
 
 **Endpoint:** `DELETE /api/mobile/user/notification/delete/{id}`
 
@@ -936,6 +1016,7 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 1. **Customer creates redemption** (`POST /api/mobile/redemption`)
 
     - Points are **NOT** deducted yet
+    - `store_id` is required in request body and will be saved to redemption
     - System uses customer's default address automatically
     - Push notification and email sent immediately
     - Status: `pending`
@@ -965,6 +1046,13 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 -   System automatically uses customer's default address (`is_default = true`)
 -   If no default address exists, `customer_address_id` will be `null`
 -   `shipping_address` in API response is a formatted object from `customer_addresses` table
+
+### Store Association
+
+-   Redemption is associated with a store via `store_id` field
+-   `store_id` is required when creating redemption (`POST /api/mobile/redemption`)
+-   `store_id` must exist in `stores` table
+-   `store_id` is nullable in database but required in API request for redemption creation
 
 ### Point Deduction Logic
 
@@ -1056,4 +1144,4 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 
 ---
 
-**Last Updated:** December 26, 2025
+**Last Updated:** January 10, 2026
