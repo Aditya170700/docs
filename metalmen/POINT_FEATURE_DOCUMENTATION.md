@@ -93,39 +93,53 @@
 
 **Query Parameters:**
 
--   `feature` (required, string) - Feature name to search for (case insensitive)
+-   `feature` (optional, string) - Feature name to search for (case insensitive)
 
 **Response:**
 
 ```json
 {
-    "point": {
-        "status": true,
-        "type": "active",
-        "text": "undermaintenance"
+    "status": "success",
+    "data": {
+        "point": {
+            "status": true,
+            "type": "active",
+            "text": "undermaintenance"
+        }
     }
 }
 ```
 
 **Response Format:**
 
+**When configuration found:**
+
 ```json
 {
-  "{feature_name}": {
-    "status": boolean,
-    "type": "maintenance|coming_soon|active",
-    "text": string|null
-  }
+    "status": "success",
+    "data": {
+        "{feature_name}": {
+            "status": boolean,
+            "type": "maintenance|coming_soon|active",
+            "text": string|null
+        }
+    }
 }
 ```
 
-**Error Responses:**
+**When configuration not found or feature parameter not provided:**
 
--   `400` - Parameter feature diperlukan
--   `404` - Configuration tidak ditemukan
+```json
+{
+    "status": "success",
+    "data": null
+}
+```
 
 **Notes:**
 
+-   `feature` parameter is optional. If not provided, returns `null`
+-   If configuration not found, returns `null` (no error response)
 -   Search is case insensitive (e.g., `point`, `POINT`, `Point` will return the same result)
 -   Response key uses the actual feature name from database (not the query parameter)
 -   `text` field can be `null` if not set
@@ -142,15 +156,29 @@ GET /api/mobile/configuration?feature=Point
 GET /api/mobile/configuration?feature=poInT
 ```
 
-**Response Example:**
+**Response Examples:**
+
+**Success - Configuration found:**
 
 ```json
 {
-    "point": {
-        "status": true,
-        "type": "maintenance",
-        "text": "Sistem sedang dalam maintenance"
+    "status": "success",
+    "data": {
+        "point": {
+            "status": true,
+            "type": "maintenance",
+            "text": "Sistem sedang dalam maintenance"
+        }
     }
+}
+```
+
+**Success - Configuration not found or feature not provided:**
+
+```json
+{
+    "status": "success",
+    "data": null
 }
 ```
 
@@ -224,19 +252,7 @@ GET /api/mobile/configuration?feature=poInT
         "is_received": false,
         "status": "processing",
         "customer_address_id": 5,
-        "shipping_address": {
-            "id": 5,
-            "name": "John Doe",
-            "phone": "081234567890",
-            "address": "Jl. Example No. 123",
-            "province": "Jakarta",
-            "city": "Jakarta Selatan",
-            "district": "Kebayoran Baru",
-            "subdistrict": "Senayan",
-            "postal_code": "12190",
-            "is_default": true,
-            "fullDetail": "John Doe, 081234567890, Jl. Example No. 123, Jakarta Selatan, Jakarta, Kebayoran Baru, Senayan, 12190"
-        },
+        "shipping_address": "John Doe, 081234567890, Jl. Example No. 123, Jakarta Selatan, Jakarta, Kebayoran Baru, Senayan, 12190",
         "waybill_number": "AWB123456789",
         "gifts": [
             {
@@ -260,16 +276,24 @@ GET /api/mobile/configuration?feature=poInT
                 "comment": "Barang sedang dikirim",
                 "created_at": "2025-12-26 10:00:00"
             }
-        ]
+        ],
+        "store": {
+            "id": 5,
+            "name": "Store Name",
+            "address": "Jl. Store Address No. 123",
+            "full_address": "Jl. Store Address No. 123, Jakarta Selatan, Jakarta, Kebayoran Baru, Senayan, 12190"
+        }
     }
 }
 ```
 
 **Changes:**
 
--   `shipping_address` is now an object containing full address details from `customer_addresses` table
+-   `shipping_address` is now a string containing full address details from `customer_addresses` table (formatted as `fullDetail`)
 -   Added `customer_address_id` field
 -   `shipping_address` is `null` if no address is set
+-   Added `store` object containing store information (id, name, address, full_address)
+-   `store` is `null` if no store is associated
 
 #### 3.3 Redeem Points
 
@@ -309,8 +333,7 @@ GET /api/mobile/configuration?feature=poInT
 **Error Responses:**
 
 -   `400` - Gift tidak ditemukan atau tidak aktif
--   `400` - Stock gift tidak tersedia
--   `400` - Point tidak cukup. Point Anda: {current}, Point yang dibutuhkan: {required}
+-   `400` - Point tidak cukup. Point Anda: {current}, Point yang dibutuhkan: {required}. Point yang tersedia: {available} (setelah dikurangi dengan redemption yang sedang diproses)
 -   `400` - Validation error if `store_id` is missing or invalid
 
 **Business Rules:**
@@ -319,6 +342,11 @@ GET /api/mobile/configuration?feature=poInT
 -   Points are deducted when redemption status changes to `done` (either via admin panel or customer marking as received)
 -   System automatically uses customer's default address (`is_default = true`)
 -   Push notification and email are sent immediately after redemption is created
+-   **Reserved Points Logic:** When checking if customer has enough points, the system calculates:
+    -   `reservedPoints` = sum of `total_points_spent` from all redemptions with status `pending` or `processing`
+    -   `availablePoint` = `currentPoint` - `reservedPoints`
+    -   Redemption can only proceed if `availablePoint >= masterGift->point`
+    -   This ensures points are reserved for pending/processing redemptions (since points are only deducted when status becomes `done`)
 
 #### 3.4 Mark Redemption as Received
 
@@ -1045,7 +1073,7 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 -   Redemption uses `customer_address_id` (not `shipping_address` string)
 -   System automatically uses customer's default address (`is_default = true`)
 -   If no default address exists, `customer_address_id` will be `null`
--   `shipping_address` in API response is a formatted object from `customer_addresses` table
+-   `shipping_address` in API response is a formatted string (fullDetail) from `customer_addresses` table, or `null` if no address is set
 
 ### Store Association
 
@@ -1057,6 +1085,14 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 ### Point Deduction Logic
 
 **Important:** Points are deducted only when redemption status becomes `done`, not when redemption is created.
+
+**Reserved Points Calculation:**
+
+-   When creating a redemption, the system calculates reserved points from pending/processing redemptions
+-   `reservedPoints` = sum of `total_points_spent` from all redemptions with status `pending` or `processing`
+-   `availablePoint` = `currentPoint` - `reservedPoints`
+-   This ensures that points are reserved for redemptions that haven't been completed yet
+-   Customer can only redeem if `availablePoint >= masterGift->point`
 
 **Deduction happens in:**
 
@@ -1117,6 +1153,7 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 -   System automatically uses customer's default address
 -   Users can mark redemption as received when status is `processing` or `done`
 -   Redemption list includes `created_at` field (no longer grouped by date)
+-   **Reserved Points:** When creating redemption, system reserves points from pending/processing redemptions. Available point = current point - reserved points (from pending/processing redemptions)
 
 ### 4. FCM Token
 
@@ -1144,4 +1181,4 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 
 ---
 
-**Last Updated:** January 10, 2026
+**Last Updated:** January 11, 2026
