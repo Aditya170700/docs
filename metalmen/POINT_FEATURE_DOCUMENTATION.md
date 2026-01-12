@@ -384,6 +384,7 @@ GET /api/mobile/configuration?feature=poInT
 -   Can complete if status is `processing` (will update to `done` and create history)
 -   Can complete if status is `done` (will only update `is_received`, no history created)
 -   Points are deducted when status changes to `done` (only once, with duplicate check)
+-   **Notification:** When status changes from `processing` to `done` (customer marks as received), a "Done Status" notification is sent (push + email). If status is already `done`, no notification is sent.
 
 ---
 
@@ -886,6 +887,8 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 
 **c. Done Status**
 
+-   **Trigger:** When redemption status changes to `done` (via admin panel or customer marking as received when status is `processing`)
+-   **Note:** If customer marks as received when status is already `done`, no notification is sent
 -   Push Title: "Penukaran Hadiah Selesai"
 -   Push Message: "Permintaan penukaran Hadiah {namaHadiah} Anda telah diselesaikan"
 -   Email: Sent with completion details, redemption code, dates, and points spent
@@ -1121,9 +1124,12 @@ All notifications are sent asynchronously via Laravel Queues for best performanc
 
 **Done Status:**
 
--   Sent when admin changes status to `done` or customer marks as received
+-   Sent when:
+    -   Admin changes status to `done` (via admin panel)
+    -   Customer marks as received AND status is `processing` (status will change to `done`)
+-   **Note:** If status is already `done` and customer marks as received, no notification is sent (no status change)
 -   Title: "Penukaran Hadiah Selesai"
--   Includes completion dates and points spent
+-   Includes completion details, redemption code, dates, and points spent
 
 ---
 
